@@ -1,0 +1,63 @@
+name: Verify Alien
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  application:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-fund --no-audit
+      - run: npm run release:check
+      - name: Parse Windows installers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem scripts/*.ps1 | ForEach-Object {
+            $Tokens=$null; $Errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$Tokens,[ref]$Errors) | Out-Null
+            if ($Errors.Count) { $Errors | Format-List; throw "Invalid PowerShell script" }
+          }
+      - name: Smoke-test built local server and supervisor
+        run: node scripts/smoke.mjs
+  isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-fund --no-audit
+      - run: docker pull docker.io/library/node:22-alpine
+      - run: docker build -t localhost/alien-evaluator:0.1.0 -f sandbox/Dockerfile .
+      - name: Verify real isolated tool execution
+        run: npm test
+        env:
+          ALIEN_CONTAINER_TEST: '1'
+          ALIEN_CONTAINER_ENGINE: docker
+      - name: Verify independent evaluator builds a candidate
+        run: node scripts/check-evaluator.mjs
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-fund --no-audit
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
