@@ -83,10 +83,10 @@ const sum = {
 };
 
 test("local-only model policy rejects cloud, credentials and endpoint smuggling", () => {
-  assert.equal(localEndpoint("http://127.0.0.1:8000/v1").port, "8000");
+  assert.equal(localEndpoint("http://127.0.0.1:11434/v1").port, "11434");
   for (const url of [
     "https://api.openai.com/v1",
-    "http://localhost:8000/v1",
+    "http://localhost:11434/v1",
     "http://127.0.0.1.evil.test/v1",
     "http://user:pass@127.0.0.1/v1",
     "http://127.0.0.1/v1?q=x",
@@ -614,8 +614,8 @@ test("native Pi MCP discovers the installed Playwright server without downloadin
   }
 });
 
- test('Windows model selection keeps the harness context within the selected server budget',async()=>{
-  const dir=await temp();await writeFile(join(dir,'model.json'),'\uFEFF'+JSON.stringify({Context:4096,ModelPath:'test'}));
+test('Ollama model selection keeps the harness context within the selected server budget',async()=>{
+  const dir=await temp();await writeFile(join(dir,'model.json'),'\uFEFF'+JSON.stringify({Context:4096,Model:'alien-local:latest'}));
   const instance=await createApp({dir,root,token:'test',sandbox:fakeSandbox,startEngine:false});
   try{assert.equal(instance.config().model.contextWindow,4096);assert(instance.config().model.maxOutputTokens<=2048);}
   finally{await instance.app.close();await rm(dir,{recursive:true,force:true});}

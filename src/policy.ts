@@ -20,6 +20,11 @@ export function localEndpoint(value: string): URL {
 export function validateConfig(c: Config): Config {
   localEndpoint(c.model.baseUrl);
   if (
+    !/^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(c.model.id) ||
+    c.model.id.endsWith(":cloud")
+  )
+    throw new Error("只允许有效的本机模型名称，不允许 Ollama 云端模型");
+  if (
     !Number.isInteger(c.model.contextWindow) ||
     c.model.contextWindow < 2048 ||
     c.model.contextWindow > 65536

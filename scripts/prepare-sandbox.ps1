@@ -10,5 +10,5 @@ if ($LASTEXITCODE -ne 0 -or ($Ready -join '') -notmatch 'ALIEN_READY') {
   exit 3010
 }
 $LinuxApp=(& wsl.exe -d $Distro -- wslpath -a $App).Trim()
-& wsl.exe -d $Distro -- bash "$LinuxApp/scripts/prepare-runtime.sh" $LinuxApp
-if ($LASTEXITCODE -ne 0) { throw 'Runtime preparation failed. See the terminal output.' }
+& wsl.exe -d $Distro -- bash "$LinuxApp/scripts/prepare-sandbox.sh" $LinuxApp
+if ($LASTEXITCODE -ne 0) { throw 'Sandbox preparation failed. See the terminal output.' }

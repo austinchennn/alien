@@ -6,7 +6,7 @@
 
 Pi 有现成实现，应使用完整的 `pi-coding-agent` SDK，而不只接入底层 Agent loop。Alien 应是围绕 Pi 的本地控制台和运行管理层。通用编码工具、会话、上下文压缩、Skill 加载和 MCP 客户端直接复用。只为用户特有的任务验收、自扩展发布、故障恢复、安装与中文 GUI 编写连接代码。
 
-首选组合：本地模型 → vLLM → Pi Coding Agent SDK → 按需加载的开源 Skill / 本地 MCP → Alien GUI、任务记录和版本管理。
+首选组合：本地模型 → Ollama → Pi Coding Agent SDK → 按需加载的开源 Skill / 本地 MCP → Alien GUI、任务记录和版本管理。
 
 ## 优先采用
 
@@ -33,7 +33,7 @@ Pi CLI 默认装载内建扩展，与 SDK 有区别：SDK 要显式加入 MCP、
 
 ### OpenClaw
 
-[openclaw/openclaw](https://github.com/openclaw/openclaw)，MIT。已有网关、控制台、渠道、Skill、会话与本地模型配置。[官方本地模型文档](https://docs.openclaw.ai/gateway/local-models)明确支持 vLLM 等兼容端点。
+[openclaw/openclaw](https://github.com/openclaw/openclaw)，MIT。已有网关、控制台、渠道、Skill、会话与本地模型配置。[官方本地模型文档](https://docs.openclaw.ai/gateway/local-models)支持 Ollama 等本地兼容端点。
 
 适合希望复用完整个人助手产品的路线。对于当前明确希望围绕 Pi、尽量控制资源占用并定制自修复边界的 Alien，先选 Pi SDK；不把 OpenClaw、Hermes、Pi 三套循环同时塞进一个进程。这里是架构选择，不是已经测出某框架更快的性能结论。
 

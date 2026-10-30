@@ -9,11 +9,11 @@ const pointer=join(data,'release.json'),request=join(data,'release-request.json'
 const baseline=join(root,'dist'),rescue=join(root,'.releases','rescue','dist');
 const json=path=>JSON.parse(readFileSync(path,'utf8').replace(/^\uFEFF/,''));
 let release;try{release=existsSync(pointer)?json(pointer):{path:baseline,previous:baseline};}catch{release={path:rescue,previous:baseline};}
-let child,modelChild,retryTimer,stopping=false,restarting=false,ticking=false,failures=0,started=Date.now(),opened=false,modelAttempts=0,lastFailure;
+let child,retryTimer,stopping=false,restarting=false,ticking=false,failures=0,started=Date.now(),opened=false,lastFailure;
 const port=Number(process.env.ALIEN_PORT??4317),url=`http://127.0.0.1:${port}`;
 function openLink(){if(process.env.ALIEN_NO_OPEN==='1'||!existsSync(join(data,'access-token')))return;const link=url+'/#token='+readFileSync(join(data,'access-token'),'utf8');if(process.platform==='win32')spawn('rundll32',['url.dll,FileProtocolHandler',link],{stdio:'ignore',windowsHide:true});else if(process.platform==='darwin')spawn('open',[link],{stdio:'ignore'});}
 function persist(){writeFileSync(pointer+'.tmp',JSON.stringify(release));renameSync(pointer+'.tmp',pointer);}
-function status(extra={}){writeFileSync(join(data,'supervisor.json'),JSON.stringify({pid:process.pid,childPid:child?.pid,modelPid:modelChild?.pid,release:release.path,failures,lastFailure,updatedAt:new Date().toISOString(),...extra}));}
+function status(extra={}){writeFileSync(join(data,'supervisor.json'),JSON.stringify({pid:process.pid,childPid:child?.pid,release:release.path,failures,lastFailure,updatedAt:new Date().toISOString(),...extra}));}
 function permitted(path){if(typeof path!=='string')return false;const r=relative(root,resolve(path)).replaceAll('\\','/');return !r.startsWith('..')&&!isAbsolute(r)&&(resolve(path)===baseline||r.startsWith('.releases/'));}
 function launch(){
   if(stopping)return;
@@ -36,17 +36,6 @@ function recover(){
   retryTimer=setTimeout(()=>{retryTimer=undefined;launch();},Math.min(Math.max(failures,1)*2000,10000));
 }
 function stopProcess(proc){return new Promise(done=>{if(!proc||!proc.pid||proc.exitCode!==null||proc.signalCode!==null)return done();const timer=setTimeout(()=>proc.kill('SIGKILL'),10000);timer.unref();proc.once('close',()=>{clearTimeout(timer);done();});proc.kill('SIGTERM');});}
-function startModel(){
-  if(stopping||process.platform!=='win32'||modelChild||modelAttempts>=3||!existsSync(join(data,'model.json')))return;
-  try{
-    const model=json(join(data,'model.json'));
-    if(typeof model.ModelPath!=='string'||!isAbsolute(model.ModelPath)||!existsSync(model.ModelPath)||!/^[a-zA-Z0-9._-]+$/.test(model.Distro)||!Number.isInteger(model.Context)||model.Context<2048||model.Context>65536)throw Error('Invalid local model configuration');
-    modelAttempts++;
-    modelChild=spawn('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(root,'scripts','start-model.ps1'),'-ModelPath',model.ModelPath,'-Distro',model.Distro,'-Context',String(model.Context)],{cwd:root,stdio:'inherit',windowsHide:true});
-    modelChild.on('error',e=>console.error('Local model:',e.message));
-    modelChild.on('close',()=>{modelChild=undefined;if(!stopping&&modelAttempts<3)setTimeout(startModel,15000).unref();});
-  }catch(e){modelAttempts=3;console.error('Local model:',String(e));}
-}
 async function inspectRequest(){
   if(!existsSync(request))return;
   const next=json(request);if(!/^[a-f0-9-]{36}$/.test(next.id))throw Error('Invalid candidate id');
@@ -67,7 +56,7 @@ async function tick(){
   }catch(e){status({mode:'recovering',error:String(e)});if(Date.now()-started>90000){restarting=true;await stopProcess(child);restarting=false;failures++;recover();}}
   finally{ticking=false;}
 }
-async function shutdown(code=0){if(stopping)return;stopping=true;clearInterval(timer);clearTimeout(retryTimer);await Promise.all([stopProcess(child),stopProcess(modelChild)]);rmSync(lock,{force:true});rmSync(join(data,'supervisor.json'),{force:true});process.exit(code);}
+async function shutdown(code=0){if(stopping)return;stopping=true;clearInterval(timer);clearTimeout(retryTimer);await stopProcess(child);rmSync(lock,{force:true});rmSync(join(data,'supervisor.json'),{force:true});process.exit(code);}
 if(process.argv.includes('--snapshot')){
   mkdirSync(join(root,'.releases','rescue'),{recursive:true});cpSync(baseline,rescue,{recursive:true});
   if(existsSync(join(root,'node_modules')))cpSync(join(root,'node_modules'),join(root,'.releases','rescue','node_modules'),{recursive:true,dereference:true});
@@ -81,4 +70,4 @@ catch{
 }
 const timer=setInterval(()=>void tick(),5000);
 for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>void shutdown());
-launch();startModel();void tick();
+launch();void tick();
