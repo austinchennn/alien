@@ -810,7 +810,7 @@ function App() {
                           model: { ...config.model, baseUrl: e.target.value },
                         })
                       }
-                      placeholder="http://127.0.0.1:8000/v1"
+                      placeholder="http://127.0.0.1:11434/v1"
                     />
                   </label>
                   <label>
@@ -823,7 +823,7 @@ function App() {
                           model: { ...config.model, id: e.target.value },
                         })
                       }
-                      placeholder="填入本地服务 /v1/models 返回的 ID"
+                      placeholder="Ollama 模型 ID，例如 alien-local:latest"
                       list="models"
                     />
                     <datalist id="models">

@@ -22,8 +22,8 @@ Windows' `Win32_VideoController.AdapterRAM` reported 4 GB on this host; `nvidia-
 
 - Repository checkout: `C:\Alien`.
 - Application data/runtime: `%LOCALAPPDATA%\Alien`.
-- The project targets Windows + WSL2, Podman and vLLM. Model weights are not included and must be supplied separately.
-- With 8 GB VRAM, start by evaluating a vLLM-compatible 4-bit Qwen3.5 9B model; fall back to 4B or reduce context length if the runtime cannot fit it. Use an Ampere-compatible AWQ/GPTQ variant, not a newer-generation-only FP4/FP8 format.
+- Ollama runs natively on Windows; no model weights are included. With 8 GB VRAM, start with Qwen3.5 4B at 4096 context. The 9B package can leave too little VRAM for the desktop, cache and runtime buffers.
+- WSL/Ubuntu and Podman are optional and used only for the isolated tool/evaluator sandbox.
 - A scheduled task starts Alien when the current Windows user logs in. This does not run before login, so the Windows session must remain active. AC sleep and hibernation are disabled, and closing the lid is set to do nothing while plugged in; keep the lid open and vents clear during sustained GPU use.
 
 The hardware snapshot was recorded on 2026-10-31. Recheck `nvidia-smi` and the installed RAM before changing model settings.

@@ -108,9 +108,9 @@ export interface CoreChange {
 }
 export const defaults: Config = {
   model: {
-    baseUrl: "http://127.0.0.1:8000/v1",
-    id: "alien-local",
-    contextWindow: 8192,
+    baseUrl: "http://127.0.0.1:11434/v1",
+    id: "alien-local:latest",
+    contextWindow: 4096,
     maxOutputTokens: 2048,
     thinking: true,
   },

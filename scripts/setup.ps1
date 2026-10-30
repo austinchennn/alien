@@ -1,4 +1,4 @@
-param([string]$InstallRoot = "$env:LOCALAPPDATA\Alien", [switch]$NoLaunch, [switch]$SkipRuntime)
+param([string]$InstallRoot = "$env:LOCALAPPDATA\Alien", [switch]$NoLaunch, [switch]$PrepareSandbox)
 $ErrorActionPreference = 'Stop'
 $App = Split-Path $PSScriptRoot -Parent
 $Runtime = Join-Path $InstallRoot 'runtime'
@@ -12,7 +12,7 @@ if (!(Test-Path "$Runtime\node.exe")) {
   $Name = "node-$($Node.version)-win-x64"
   $Download = Join-Path $env:TEMP ($Name + '.zip')
   Invoke-WebRequest "https://nodejs.org/dist/$($Node.version)/$Name.zip" -OutFile $Download
-  $Checks = (Invoke-WebRequest "https://nodejs.org/dist/$($Node.version)/SHASUMS256.txt").Content
+  $Checks = Invoke-RestMethod "https://nodejs.org/dist/$($Node.version)/SHASUMS256.txt"
   $Expected = (($Checks -split "`n" | Where-Object { $_ -match "  $([regex]::Escape($Name)).zip\s*$" }) -split '\s+')[0]
   if (!$Expected -or (Get-FileHash $Download -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Expected.ToLowerInvariant()) { throw 'Node.js checksum mismatch.' }
   $Extract = Join-Path $env:TEMP ('alien-node-' + [guid]::NewGuid().ToString('N'))
@@ -39,12 +39,14 @@ try {
   $Shortcut.WorkingDirectory = $App
   $Shortcut.Save()
   Write-Host 'Alien is installed. Model weights were not downloaded.'
-  Write-Host 'Preparing WSL, free vLLM and Podman (software downloads only)...'
-  if (!$SkipRuntime) {
-    $Preparation=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $App + '\scripts\prepare-runtime.ps1"')) -Wait -PassThru -NoNewWindow
-    if ($Preparation.ExitCode -ne 0) { Write-Host 'Runtime setup is pending. After Windows/Ubuntu setup or a reboot, double-click Prepare-Runtime.cmd.' }
+  $Ollama = Get-Command ollama.exe -ErrorAction SilentlyContinue
+  if (!$Ollama) { Write-Host 'Ollama is not installed. Install the native Windows app from https://ollama.com/download/windows.' }
+  if ($PrepareSandbox) {
+    Write-Host 'Preparing the optional WSL/Podman tool sandbox...'
+    $Preparation=Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"' + $App + '\scripts\prepare-sandbox.ps1"')) -Wait -PassThru -NoNewWindow
+    if ($Preparation.ExitCode -ne 0) { Write-Host 'Sandbox setup is pending. After any requested Windows/Ubuntu setup or reboot, double-click Prepare-Sandbox.cmd.' }
   }
-  Write-Host 'When your model files are ready, double-click Configure-Model.cmd to select the local folder.'
+  Write-Host 'After installing Ollama and pulling a model, double-click Configure-Model.cmd to configure Alien.'
   $Gpu=Get-Command nvidia-smi.exe -ErrorAction SilentlyContinue
   if ($Gpu) { & $Gpu.Source --query-gpu=name,memory.total --format=csv,noheader,nounits | Set-Content -Encoding UTF8 "$Data\gpu.txt" }
   if (!$NoLaunch) { & "$App\start.cmd" }

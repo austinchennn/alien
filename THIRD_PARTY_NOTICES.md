@@ -17,6 +17,6 @@ Alien's original source is MIT licensed. Dependencies retain their own licenses 
 
 Superpowers source: https://github.com/obra/superpowers/tree/2ce8aa15d05bd57213e6f746f953aafb7ded7a8b . Selected directories: systematic-debugging, verification-before-completion, test-driven-development, writing-skills, plus supporting runtime reference documents. Bundled as instructions and supporting references, without the upstream bootstrap extension. The scripts and instructions are not run merely by installation.
 
-vLLM (Apache-2.0) and Podman (Apache-2.0) are installed separately in WSL by an optional preparation step. Node.js and its included components retain their distributed notices. No model weights are redistributed. Each chosen model and quantization has its own license.
+Ollama is installed separately as a native Windows application and is not bundled. Podman (Apache-2.0) is installed separately in WSL for the optional container sandbox. Node.js and its included components retain their distributed notices. No model weights are redistributed. Each chosen model and quantization has its own license.
 
 No source from leaked Claude Code distributions is included. Researching a repository's README is not a license grant.

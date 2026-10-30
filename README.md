@@ -10,25 +10,31 @@
 
 [**下载 Install-Alien.cmd**](https://github.com/austinchennn/alien/releases/latest/download/Install-Alien.cmd) · [完整安装包](https://github.com/austinchennn/alien/releases/latest/download/Alien-Windows.zip)
 
-双击安装器，会校验并下载应用、免费 Node.js 运行环境，安装依赖，构建界面，保存独立救援副本，并准备 WSL / Podman / vLLM。默认位置：`%LOCALAPPDATA%\Alien`。首次需联网下载软件，**不下载任何模型权重**。
-
-如果 Windows 尚未启用 WSL，系统可能要求管理员许可和重启。完成后打开 Ubuntu 一次，按提示建立 Linux 用户，再双击应用文件夹中的 **Prepare-Runtime.cmd** 完成准备。这部分 Windows 首次配置无法由普通应用无提示跳过。准备过程可能要求输入刚创建的 Ubuntu 用户密码。
+双击安装器，会校验并下载应用、免费 Node.js 运行环境，安装依赖、构建界面并保存独立救援副本。默认位置：`%LOCALAPPDATA%\Alien`。首次需联网下载软件，**不下载任何模型权重**。
 
 源码下载用户也可以双击 `setup.cmd`。首次安装完成后，桌面会出现 Alien 快捷方式。
 
-### 2. 选择你已下载的模型
+### 2. 安装 Ollama 并选择模型
 
-打开 `%LOCALAPPDATA%\Alien\app`，双击 **Configure-Model.cmd**，选择包含 `config.json`、分词器和 `.safetensors` 的完整本地模型目录。**GGUF 不适用于这个 vLLM 启动脚本**。
+安装 [Ollama for Windows](https://ollama.com/download/windows)。Ollama 以当前 Windows 用户运行，在后台提供本机服务，不需要管理员权限或 WSL。然后在终端下载模型，例如：
 
-重新启动 Alien，它会在 WSL 中启动 vLLM，然后打开控制台。默认服务是 `http://127.0.0.1:8000/v1`，模型名 `alien-local`，上下文 8192。已设置 Hugging Face / Transformers 离线模式；文件不完整会报错，不会替你下载。
+```powershell
+ollama pull qwen3.5:4b
+```
 
-当前启动配置针对 Qwen3.5 系列，使用官方建议的 `qwen3_coder` / `qwen3` 解析器；使用其他模型时需要相应调整解析器。脚本启用文本模式，不加载视觉编码器。
+双击应用文件夹中的 **Configure-Model.cmd**，输入已下载的 Ollama 模型名和上下文长度。脚本会创建名为 `alien-local:latest` 的本地模型别名，不会下载模型。重启 Alien 后，它使用 `http://127.0.0.1:11434/v1` 上的 OpenAI 兼容接口。模型服务由 Ollama 管理，Alien 不会启动或停止 Ollama。
 
-### 3. 可选配置
+8 GB 显存建议先从 Qwen3.5 4B 开始，并把上下文设为 4096。若想尝试 9B，权重、KV cache 和桌面显示都要共用显存；能否运行取决于量化版本和实际剩余显存。
+
+### 3. 可选的隔离沙箱
+
+Ollama 推理不使用 WSL。需要运行自主生成工具的容器自测或应用候选验收时，才需准备 WSL / Ubuntu / Podman；这一步可能要求管理员许可和重启。安装并初始化 Ubuntu 后，双击 **Prepare-Sandbox.cmd**。不准备沙箱时，普通 Agent 会话仍可使用，但容器隔离的自扩展和候选验收功能不可用。
+
+### 4. 可选配置
 
 - **浏览器**：双击 `Install-Browser.cmd` 安装 Chromium，在设置填写允许的网站域名并启用 Playwright MCP。本版开放导航、快照、截图等只读工具，没有开放点击提交、上传和任意 JS 执行。
 - **Apple Calendar**：设置页填写 iCloud Apple 账户及应用专用密码，当前仅提供读取；也可在工作区放入 ICS 文件。不会通过 Google Calendar 间接同步。
-- **登录后自启**：运行 `scripts\enable-autostart.ps1`。这是当前 Windows 用户登录后启动，尚不是登录前系统服务。保持电脑登录且不要休眠，才能持续工作。
+- **登录后自启**：运行 `scripts\enable-autostart.ps1`。这是当前 Windows 用户登录后启动，尚不是登录前系统服务。保持电脑登录且不要休眠，Ollama 才能在后台持续提供本机模型。
 - **自主发布**：设置中可开启“独立验收通过后自动发布应用候选”。默认关闭；工具若有用户提供的独立验收用例，通过后会自动启用。
 
 ## 模型与硬件
@@ -37,13 +43,13 @@
 
 | 实际显存 | 起点 |
 | --- | --- |
-| 6 GB | 支持 vLLM 的 Qwen3.5-4B 4-bit 量化，先尝试 4K 上下文 |
-| 8 GB | 支持 vLLM 的 Qwen3.5-9B 4-bit 量化，必要时回退 4B 或缩短上下文 |
-| 16 GB | 优先验证 Qwen3.5-9B 的更高精度或更大上下文 |
+| 6 GB | 试用 Qwen3.5 2B 或 4B 量化版，先用 4K 上下文 |
+| 8 GB | 先用 Qwen3.5 4B；9B 量化版可能因显存余量不足而卸载到系统内存或无法启动 |
+| 16 GB | 可尝试 Qwen3.5 9B 量化版或更长上下文 |
 
-RTX 30 系列应选择支持 Ampere 的 AWQ / GPTQ 等量化方案，不能直接采用仅面向更新硬件的 FP4/FP8 配置。显存还要容纳 KV cache、框架与运行缓冲；能否装下以实际启动为准。9B 的全精度权重不适合 8GB 显存。量化仓库的许可证和 vLLM 兼容性需与原模型分别核对。
+Ollama 会管理模型和运行时；模型权重、KV cache、运行缓冲和 Windows 桌面共用显存。模型能否完整放入显存，以实际加载结果为准。每个模型与量化版本的许可证应单独核对。
 
-[vLLM Windows / WSL 官方说明](https://docs.vllm.ai/en/latest/getting_started/installation/gpu/index.html) · [Qwen3.5 配置说明](https://docs.vllm.ai/projects/recipes/en/latest/Qwen/Qwen3.5.html)
+[Ollama Windows 安装说明](https://docs.ollama.com/windows) · [Ollama 工具调用](https://docs.ollama.com/capabilities/tool-calling) · [Ollama OpenAI 兼容接口](https://docs.ollama.com/api/openai-compatibility)
 
 ## 现在具备什么
 
@@ -72,7 +78,7 @@ RTX 30 系列应选择支持 Ampere 的 AWQ / GPTQ 等量化方案，不能直�
 
 ## 费用
 
-模型端点仅允许数字回环地址，未配置云端回退。默认集成没有 OpenAI / Claude / 付费搜索 API，也不需要购买软件许可证。Pi 的包可能包含多供应商 SDK 作为依赖，Alien 的运行路径只注册并调用 `alien-local`。关闭 Pi 安装遥测、提示缓存保温和网络模型目录刷新。
+模型端点仅允许数字回环地址，未配置云端回退。默认集成没有 OpenAI / Claude / 付费搜索 API，也不需要购买软件许可证。Pi 的包可能包含多供应商 SDK 作为依赖，Alien 的运行路径只注册并调用本机 Ollama 的 `alien-local:latest` 模型。关闭 Pi 安装遥测、提示缓存保温和网络模型目录刷新。
 
 自行安装的外部 MCP / Skill 是否收费需要另行核对，所以本版没有“任意市场插件一键信任执行”。公开 GitHub 仓库使用标准免费检查任务；不启用付费托管服务。
 

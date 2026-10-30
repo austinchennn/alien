@@ -17,7 +17,7 @@ export class ModelGateway {
     );
     if (!response.ok) throw new Error("模型服务返回 " + response.status);
     const body = (await response.json()) as { data?: { id: string }[] };
-    return (body.data ?? []).map((m) => m.id);
+    return (body.data ?? []).map((m) => m.id).filter((id) => !id.endsWith(":cloud"));
   }
   model(): Model<"openai-completions"> {
     const c = this.config().model;
@@ -60,7 +60,7 @@ export class ModelGateway {
       maxTokens: c.model.maxOutputTokens,
       identity: { attribution: null },
       samplingParams: {
-        chat_template_kwargs: { enable_thinking: c.model.thinking },
+        reasoning_effort: c.model.thinking ? "medium" : "none",
       },
     });
   };

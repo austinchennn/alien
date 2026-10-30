@@ -5,7 +5,7 @@ flowchart TD
   UI[Local Chinese GUI] --> API[Authenticated loopback API]
   API --> Queue[SQLite task and event ledger]
   Queue --> Pi[Pi AgentSession SDK]
-  Pi --> Model[Local vLLM endpoint]
+  Pi --> Model[Local Ollama OpenAI-compatible endpoint]
   Pi --> Skills[Standard SKILL.md resources]
   Pi --> MCP[Pi MCP and tool search]
   MCP --> Browser[Local Playwright server]
@@ -58,7 +58,7 @@ Installer layout:
 - `%LOCALAPPDATA%/Alien/data`: SQLite, Pi sessions, access token, vault, user workspace, candidates and backups.
 - `%LOCALAPPDATA%/Alien/runtime`: portable Node.
 - `app/.releases`: evaluated app artifacts plus independent rescue dependencies.
-- WSL `~/.local/share/alien/inference`: vLLM Python environment.
+- WSL Ubuntu Podman and evaluator image are optional and only support the container sandbox; model inference runs in the native Windows Ollama app.
 
 The GitHub repository and Windows ZIP contain source, tests, instructions and open-source Skill files only. They exclude data, credentials, dependency caches, browser profiles and model weights.
 

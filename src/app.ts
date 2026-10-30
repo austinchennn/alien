@@ -51,16 +51,62 @@ export async function createApp(options: {
   if (!options.token) writeFileSync(tokenPath, token, { mode: 0o600 });
   let config =
     store.get<Config>("settings", "config") ?? structuredClone(defaults);
-  const modelFile=join(dir,'model.json');
-  if(existsSync(modelFile)){
-    try{
-      const raw=readFileSync(modelFile,'utf8').replace(/^\uFEFF/,'');
-      const local=JSON.parse(raw) as {Context:number};
-      if(raw!==store.get('settings','modelFile')&&Number.isInteger(local.Context)&&local.Context>=2048&&local.Context<=65536){
-        config={...config,model:{...config.model,id:'alien-local',baseUrl:defaults.model.baseUrl,contextWindow:local.Context,maxOutputTokens:Math.min(config.model.maxOutputTokens,Math.floor(local.Context/2))}};
-        validateConfig(config);store.put('settings','config',config);store.put('settings','modelFile',raw);
+  if (config.model.baseUrl === "http://127.0.0.1:8000/v1") {
+    config = {
+      ...config,
+      model: {
+        ...config.model,
+        id: config.model.id === "alien-local" ? defaults.model.id : config.model.id,
+        baseUrl: defaults.model.baseUrl,
+      },
+    };
+    store.put("settings", "config", config);
+  }
+  const modelFile = join(dir, "model.json");
+  if (existsSync(modelFile)) {
+    try {
+      const raw = readFileSync(modelFile, "utf8").replace(/^\uFEFF/, "");
+      const local = JSON.parse(raw) as { Model?: unknown; Context?: unknown };
+      const validModel =
+        typeof local.Model === "string" &&
+        /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/.test(local.Model);
+      const validContext =
+        Number.isInteger(local.Context) &&
+        Number(local.Context) >= 2048 &&
+        Number(local.Context) <= 65536;
+      if (
+        raw !== store.get("settings", "modelFile") &&
+        validModel &&
+        validContext
+      ) {
+        config = {
+          ...config,
+          model: {
+            ...config.model,
+            id: local.Model as string,
+            baseUrl: defaults.model.baseUrl,
+            contextWindow: local.Context as number,
+            maxOutputTokens: Math.min(
+              config.model.maxOutputTokens,
+              Math.floor((local.Context as number) / 2),
+            ),
+          },
+        };
+        validateConfig(config);
+        store.put("settings", "config", config);
+        store.put("settings", "modelFile", raw);
+      } else if (raw !== store.get("settings", "modelFile")) {
+        store.event("system", "model_config_error", {
+          reason:
+            "本地 Ollama 模型配置无效或来自旧版 vLLM；请重新运行 Configure-Model.cmd",
+        });
+        store.put("settings", "modelFile", raw);
       }
-    }catch{store.event('system','model_config_error',{reason:'本地模型选择配置无效，保留现有运行设置'});}
+    } catch {
+      store.event("system", "model_config_error", {
+        reason: "本地 Ollama 模型配置无效，保留现有运行设置",
+      });
+    }
   }
   const getConfig = () => config;
   const nativeSandbox = new ContainerSandbox(getConfig);

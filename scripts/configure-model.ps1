@@ -1,15 +1,54 @@
-param([string]$ModelPath,[string]$Distro='Ubuntu',[int]$Context=8192)
-$ErrorActionPreference='Stop'
-if (!$ModelPath) {
-  Add-Type -AssemblyName System.Windows.Forms
-  $Dialog=New-Object System.Windows.Forms.FolderBrowserDialog
-  $Dialog.Description='Choose your EXISTING local model folder (config.json and safetensors). No models will be downloaded.'
-  if ($Dialog.ShowDialog() -ne 'OK') { exit 0 }
-  $ModelPath=$Dialog.SelectedPath
+param([string]$ModelName, [int]$Context = 0)
+$ErrorActionPreference = 'Stop'
+
+$Ollama = Get-Command ollama.exe -ErrorAction SilentlyContinue
+if (!$Ollama) {
+  $Bundled = Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'
+  if (Test-Path $Bundled) { $Ollama = @{ Source = $Bundled } }
 }
-if (!(Test-Path (Join-Path $ModelPath 'config.json'))) { throw 'Select a complete Hugging Face model folder, not a GGUF file or cache parent.' }
-if ($Distro -notmatch '^[a-zA-Z0-9._-]+$' -or $Context -lt 2048 -or $Context -gt 65536) { throw 'Invalid model settings.' }
-$Data=if ($env:ALIEN_DATA) { $env:ALIEN_DATA } else { "$env:LOCALAPPDATA\Alien\data" }
+if (!$Ollama) {
+  throw 'Ollama is not installed. Install it from https://ollama.com/download/windows, then reopen this command.'
+}
+if (!$ModelName) {
+  $ModelName = Read-Host 'Enter an already downloaded Ollama model (default qwen3.5:4b)'
+  if (!$ModelName) { $ModelName = 'qwen3.5:4b' }
+}
+if ($Context -eq 0) {
+  $ContextInput = Read-Host 'Context length in tokens (default 4096)'
+  if (!$ContextInput) {
+    $Context = 4096
+  } else {
+    [int]$ParsedContext = 0
+    if (![int]::TryParse($ContextInput, [ref]$ParsedContext)) {
+      throw 'Context must be a whole number.'
+    }
+    $Context = $ParsedContext
+  }
+}
+if ($ModelName -notmatch '^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$' -or $ModelName -match '^alien-local(?::.*)?$' -or $ModelName -match ':cloud$') {
+  throw 'Enter a valid base model name other than alien-local.'
+}
+if ($Context -lt 2048 -or $Context -gt 65536) {
+  throw 'Context must be between 2048 and 65536 tokens.'
+}
+
+& $Ollama.Source show $ModelName *> $null
+if ($LASTEXITCODE -ne 0) {
+  throw "Model '$ModelName' is not installed. Run 'ollama pull $ModelName' first. No model was downloaded by this script."
+}
+
+$Modelfile = Join-Path $env:TEMP ('alien-' + [guid]::NewGuid().ToString('N') + '.Modelfile')
+try {
+  @("FROM $ModelName", "PARAMETER num_ctx $Context") | Set-Content -Encoding ascii $Modelfile
+  & $Ollama.Source create alien-local:latest -f $Modelfile
+  if ($LASTEXITCODE -ne 0) { throw 'Could not create the Alien model alias.' }
+} finally {
+  Remove-Item -LiteralPath $Modelfile -Force -ErrorAction SilentlyContinue
+}
+
+$Data = if ($env:ALIEN_DATA) { $env:ALIEN_DATA } else { Join-Path $env:LOCALAPPDATA 'Alien\data' }
 New-Item -ItemType Directory -Path $Data -Force | Out-Null
-@{ModelPath=(Resolve-Path $ModelPath).Path;Distro=$Distro;Context=$Context} | ConvertTo-Json | Set-Content -Encoding UTF8 (Join-Path $Data 'model.json')
-Write-Host 'Local model selected. Restart Alien to start it automatically with vLLM. No model weights were downloaded.'
+@{ Model = 'alien-local:latest'; Context = $Context } |
+  ConvertTo-Json |
+  Set-Content -Encoding UTF8 (Join-Path $Data 'model.json')
+Write-Host "Alien is configured to use Ollama model '$ModelName' through the local alias 'alien-local:latest' with a $Context-token context. Restart Alien to apply it."
