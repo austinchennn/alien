@@ -24,6 +24,9 @@ import {
   type Skill,
   type TestCase,
   type Capability,
+  type Conversation,
+  type ConversationMessage,
+  type Project,
 } from "./domain.js";
 import { validateConfig } from "./policy.js";
 import { ContainerSandbox, type Sandbox } from "./sandbox.js";
@@ -33,6 +36,7 @@ import { ModelGateway } from "./model.js";
 import { Engine } from "./engine.js";
 import { Vault } from "./vault.js";
 import { CalendarConnector } from "./calendar.js";
+import { hostMetrics } from "./metrics.js";
 export async function createApp(options: {
   dir: string;
   root: string;
@@ -191,6 +195,15 @@ export async function createApp(options: {
     skills: [...bundled, ...store.list<Skill>("skill")],
     outputs: outputs(),
     changes: store.list("change"),
+    conversations: store.list<Conversation>("conversation").map((c) => ({
+      id: c.id,
+      title: c.title,
+      projectId: c.projectId,
+      forkedFrom: c.forkedFrom,
+      updatedAt: c.updatedAt,
+      messageCount: c.messages.length,
+    })),
+    projects: store.list<Project>("project"),
     config,
     calendarConfigured: calendar.configured(),
     system: {
@@ -240,6 +253,111 @@ export async function createApp(options: {
       req.body.toolId,
     ),
   );
+  app.get("/api/conversations", async () =>
+    store.list<Conversation>("conversation"),
+  );
+  app.post<{ Body: { title?: string; projectId?: string } }>(
+    "/api/conversations",
+    async (req) => {
+      const title = String(req.body.title ?? "新对话").trim().slice(0, 120) || "新对话";
+      const projectId = req.body.projectId || undefined;
+      if (projectId && !store.get<Project>("project", projectId))
+        throw new Error("项目不存在");
+      const createdAt = now();
+      const chat: Conversation = {
+        id: randomUUID(), title, projectId, createdAt, updatedAt: createdAt, messages: [],
+      };
+      store.put("conversation", chat.id, chat);
+      return chat;
+    },
+  );
+  app.get<{ Params: { id: string } }>("/api/conversations/:id", async (req, reply) => {
+    const chat = store.get<Conversation>("conversation", req.params.id);
+    if (!chat) return reply.code(404).send({ error: "对话不存在" });
+    return chat;
+  });
+  app.patch<{ Params: { id: string }; Body: { title?: string; projectId?: string | null } }>(
+    "/api/conversations/:id",
+    async (req, reply) => {
+      const chat = store.get<Conversation>("conversation", req.params.id);
+      if (!chat) return reply.code(404).send({ error: "对话不存在" });
+      if (req.body.title !== undefined) {
+        const title = req.body.title.trim();
+        if (!title || title.length > 120) throw new Error("标题长度必须为 1–120 字符");
+        chat.title = title;
+      }
+      if (req.body.projectId !== undefined) {
+        const projectId = req.body.projectId || undefined;
+        if (projectId && !store.get<Project>("project", projectId))
+          throw new Error("项目不存在");
+        chat.projectId = projectId;
+      }
+      chat.updatedAt = now();
+      store.put("conversation", chat.id, chat);
+      return chat;
+    },
+  );
+  app.post<{ Params: { id: string }; Body: { content: string } }>(
+    "/api/conversations/:id/messages",
+    async (req, reply) => {
+      const chat = store.get<Conversation>("conversation", req.params.id);
+      if (!chat) return reply.code(404).send({ error: "对话不存在" });
+      const content = req.body.content?.trim();
+      if (!content || content.length > 12000) throw new Error("消息长度必须为 1–12000 字符");
+      const message: ConversationMessage = {
+        id: randomUUID(), role: "user", content, createdAt: now(),
+      };
+      chat.messages.push(message);
+      if (chat.title === "新对话" && chat.messages.filter((m) => m.role === "user").length === 1)
+        chat.title = content.replace(/\s+/g, " ").slice(0, 48);
+      chat.updatedAt = message.createdAt;
+      store.put("conversation", chat.id, chat);
+      const task = engine.create(content, "task", [], undefined, 0, chat.id);
+      message.taskId = task.id;
+      store.put("conversation", chat.id, chat);
+      return { message, task };
+    },
+  );
+  app.post<{ Params: { id: string }; Body: { messageId?: string } }>(
+    "/api/conversations/:id/fork",
+    async (req, reply) => {
+      const source = store.get<Conversation>("conversation", req.params.id);
+      if (!source) return reply.code(404).send({ error: "对话不存在" });
+      const index = req.body.messageId
+        ? source.messages.findIndex((m) => m.id === req.body.messageId)
+        : source.messages.length - 1;
+      if (req.body.messageId && index < 0) throw new Error("找不到分支起点");
+      const messages = source.messages.slice(0, index + 1).map((m) => ({ ...m }));
+      const createdAt = now();
+      const fork: Conversation = {
+        id: randomUUID(), title: source.title + "（分支）", projectId: source.projectId,
+        forkedFrom: source.id, createdAt, updatedAt: createdAt, messages,
+      };
+      store.put("conversation", fork.id, fork);
+      return fork;
+    },
+  );
+  app.get("/api/projects", async () => store.list<Project>("project"));
+  app.post<{ Body: { name: string } }>("/api/projects", async (req) => {
+    const name = req.body.name?.trim();
+    if (!name || name.length > 80) throw new Error("项目名称长度必须为 1–80 字符");
+    const createdAt = now();
+    const project: Project = { id: randomUUID(), name, createdAt, updatedAt: createdAt };
+    store.put("project", project.id, project);
+    return project;
+  });
+  app.patch<{ Params: { id: string }; Body: { name: string } }>(
+    "/api/projects/:id", async (req, reply) => {
+      const project = store.get<Project>("project", req.params.id);
+      if (!project) return reply.code(404).send({ error: "项目不存在" });
+      const name = req.body.name?.trim();
+      if (!name || name.length > 80) throw new Error("项目名称长度必须为 1–80 字符");
+      project.name = name;
+      project.updatedAt = now();
+      store.put("project", project.id, project);
+      return project;
+    },
+  );
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
     "/api/tasks/:id/events",
     async (req) => store.events(req.params.id, Number(req.query.after) || 0),
@@ -258,6 +376,7 @@ export async function createApp(options: {
       return { ok: false, models: [], error: String(e) };
     }
   });
+  app.get("/api/metrics", async () => hostMetrics(store.list<Task>("task")));
   app.get("/api/sandbox/status", async () => sandbox.health());
   app.put<{ Body: Config }>("/api/config", async (req) => {
     const candidate = validateConfig(req.body);

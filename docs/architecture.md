@@ -3,7 +3,9 @@
 ```mermaid
 flowchart TD
   UI[Local Chinese GUI] --> API[Authenticated loopback API]
-  API --> Queue[SQLite task and event ledger]
+  API --> Chats[Local projects conversations and forks]
+  Chats --> Queue[SQLite task and event ledger]
+  UI --> Metrics[Local CPU RAM GPU and VRAM metrics]
   Queue --> Pi[Pi AgentSession SDK]
   Pi --> Model[Local Ollama OpenAI-compatible endpoint]
   Pi --> Skills[Standard SKILL.md resources]
@@ -21,9 +23,10 @@ flowchart TD
 
 ## Responsibilities
 
-- `domain.ts`: task, capability, memory, Skill and configuration contracts.
+- `domain.ts`: conversation, project, task, capability, memory, Skill and configuration contracts.
 - `store.ts`: synchronous SQLite persistence and append-only events.
 - `engine.ts`: serial durable task queue and outcome validation; delegates agent execution to Pi.
+- Conversation turns use the same durable task queue; local chat history is restored into later turns and can be forked at a message. The sidebar metrics endpoint reads host CPU/RAM and, when available, `nvidia-smi` GPU/VRAM statistics.
 - `pi.ts`: explicitly configured local model runtime, Pi sessions, compaction, standard resources, native MCP, clean shutdown.
 - `tools.ts`: application tool adapters, action evidence, idempotent write intent and scoped I/O. read/write/edit call Pi's implementations rather than reimplementing editing algorithms.
 - `registry.ts`: versioned generated tools, schema validation, self-tests versus independent acceptance, activation and rollback.

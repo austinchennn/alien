@@ -44,7 +44,7 @@ function App() {
     () => hash.get("token") ?? sessionStorage.getItem("alien-token") ?? "",
   );
   const [state, setState] = useState<Obj>();
-  const [page, setPage] = useState("总览");
+  const [page, setPage] = useState("对话");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,6 +59,10 @@ function App() {
   const [config, setConfig] = useState<Obj>();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [conversationId, setConversationId] = useState<string>();
+  const [conversation, setConversation] = useState<Obj>();
+  const [chatInput, setChatInput] = useState("");
+  const [metrics, setMetrics] = useState<Obj>();
   const api = useCallback(
     async (path: string, method = "GET", body?: unknown) => {
       const r = await fetch("/api/" + path, {
@@ -110,6 +114,27 @@ function App() {
     return () => clearInterval(id);
   }, [api, token]);
   useEffect(() => {
+    if (!token) return;
+    const check = () => void api("metrics").then(setMetrics).catch(() => {});
+    check();
+    const id = setInterval(check, 4000);
+    return () => clearInterval(id);
+  }, [api, token]);
+  useEffect(() => {
+    if (!conversationId) {
+      setConversation(undefined);
+      return;
+    }
+    let alive = true;
+    const check = () =>
+      void api(`conversations/${conversationId}`)
+        .then((chat) => { if (alive) setConversation(chat); })
+        .catch((e) => { if (alive) setError(String(e)); });
+    check();
+    const id = setInterval(check, 1400);
+    return () => { alive = false; clearInterval(id); };
+  }, [api, conversationId]);
+  useEffect(() => {
     if (!selected) return;
     const check = () =>
       void api(`tasks/${selected}/events`)
@@ -159,10 +184,49 @@ function App() {
       setPage("任务");
     }, "任务已入队");
   }
+  async function newConversation(projectId?: string) {
+    await action(async () => {
+      const chat = await api("conversations", "POST", { projectId });
+      setConversationId(chat.id);
+      setPage("对话");
+      setChatInput("");
+    }, "已创建新对话");
+  }
+  async function sendMessage(e?: React.FormEvent) {
+    e?.preventDefault();
+    const content = chatInput.trim();
+    if (!content || !conversationId) return;
+    setChatInput("");
+    await action(async () => {
+      await api(`conversations/${conversationId}/messages`, "POST", { content });
+      await refresh();
+    }, "消息已发送");
+  }
+  async function createProject() {
+    const name = window.prompt("项目 / 文件夹名称");
+    if (!name?.trim()) return;
+    await action(() => api("projects", "POST", { name: name.trim() }), "项目已创建");
+  }
+  async function moveConversation(projectId: string) {
+    if (!conversationId) return;
+    await action(() => api(`conversations/${conversationId}`, "PATCH", { projectId: projectId || null }), "对话已移动");
+  }
+  async function forkConversation(messageId: string) {
+    if (!conversationId) return;
+    await action(async () => {
+      const fork = await api(`conversations/${conversationId}/fork`, "POST", { messageId });
+      setConversationId(fork.id);
+      setPage("对话");
+    }, "已从此处创建分支对话");
+  }
   const tasks: Obj[] = state?.tasks ?? [];
   const capabilities: Obj[] = state?.capabilities ?? [];
   const current = tasks.find((t) => t.id === selected);
+  const conversations: Obj[] = state?.conversations ?? [];
+  const projects: Obj[] = state?.projects ?? [];
+  const projectChats = (projectId?: string) => conversations.filter((c) => c.projectId === projectId);
   const nav = [
+    "对话",
     "总览",
     "任务",
     "能力仓库",
@@ -212,6 +276,28 @@ function App() {
           <small>LOCAL</small>
         </div>
         <div className="space-label">个人工作空间</div>
+        <button className="new-chat-button" disabled={busy} onClick={() => void newConversation()}>
+          <span>＋</span> 新对话
+        </button>
+        <div className="sidebar-groups">
+          <div className="sidebar-group-title">项目 <button aria-label="新建项目" onClick={() => void createProject()}>＋</button></div>
+          {projects.map((project) => (
+            <div className="project-group" key={project.id}>
+              <button className="project-name" onClick={() => setPage("对话")}>▰ <span>{project.name}</span></button>
+              {projectChats(project.id).slice(0, 5).map((chat) => (
+                <button key={chat.id} className={conversationId === chat.id ? "chat-link selected" : "chat-link"} onClick={() => { setConversationId(chat.id); setPage("对话"); }}>
+                  <span>◦</span>{chat.title}
+                </button>
+              ))}
+            </div>
+          ))}
+          <div className="sidebar-group-title recent-title">最近对话</div>
+          {projectChats(undefined).slice(0, 8).map((chat) => (
+            <button key={chat.id} className={conversationId === chat.id ? "chat-link selected" : "chat-link"} onClick={() => { setConversationId(chat.id); setPage("对话"); }}>
+              <span>◦</span>{chat.title}
+            </button>
+          ))}
+        </div>
         <nav>
           {nav.map((name, i) => (
             <button
@@ -220,16 +306,23 @@ function App() {
               onClick={() => setPage(name)}
             >
               <span className="nav-icon">
-                {["◈", "▤", "⌘", "▥", "⟳", "⚙"][i]}
+                {["◉", "◈", "▤", "⌘", "▥", "⟳", "⚙"][i]}
               </span>
               {name}
-              {name === "任务" &&
+              {(name === "任务" || name === "对话") &&
                 tasks.filter((t) => t.status === "running").length > 0 && (
-                  <b>1</b>
+                  <b>{tasks.filter((t) => t.status === "running").length}</b>
                 )}
             </button>
           ))}
         </nav>
+        <section className="sidebar-load" aria-label="本机运行负载">
+          <div className="load-head"><strong>本机运行负载</strong><span>{metrics?.activeAgents ?? 0}/{metrics?.maxConcurrentAgents ?? 1} Agent</span></div>
+          <LoadMeter label="CPU" percent={metrics?.cpuPercent ?? 0} />
+          <LoadMeter label="RAM" percent={metrics?.memoryTotalBytes ? Math.round(metrics.memoryUsedBytes / metrics.memoryTotalBytes * 100) : 0} />
+          {metrics?.gpus?.[0] && <LoadMeter label="GPU" percent={metrics.gpus[0].utilization} detail={`${Math.round(metrics.gpus[0].memoryUsedMiB / 1024 * 10) / 10}/${Math.round(metrics.gpus[0].memoryTotalMiB / 1024 * 10) / 10} GB VRAM`} />}
+          <small>{metrics?.queuedAgents ?? 0} 个 Agent 等待 · {metrics?.gpus?.[0]?.temperatureC ?? "–"}°C</small>
+        </section>
         <div className="sidebar-bottom">
           <span className={"dot " + (model?.ok ? "green" : "amber")} />
           <strong>{model?.ok ? "本地模型已连接" : "本地模型待连接"}</strong>
@@ -248,7 +341,56 @@ function App() {
           </div>
           <span className="privacy">◉ 数据保存在这台电脑</span>
         </header>
-        <main>
+        <main className={page === "对话" ? "chat-main" : undefined}>
+          {page === "对话" ? (
+            <section className="chat-workspace">
+              {error && <div role="alert" className="banner error chat-banner">{error}<button onClick={() => setError("")}>关闭</button></div>}
+              {notice && <div role="status" className="banner success chat-banner">{notice}<button onClick={() => setNotice("")}>关闭</button></div>}
+              <div className="chat-topbar">
+                <div className="chat-title-wrap">
+                  <strong>{conversation?.title ?? "新对话"}</strong>
+                  {conversation?.forkedFrom && <small>分支对话</small>}
+                </div>
+                {conversation && <select aria-label="移动到项目" value={conversation.projectId ?? ""} onChange={(e) => void moveConversation(e.target.value)}>
+                  <option value="">未分类</option>
+                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+                </select>}
+                <span className="model-pill"><i />{state.config.model.id}</span>
+              </div>
+              <div className="chat-scroll">
+                {!conversationId || !conversation ? (
+                  <div className="chat-welcome">
+                    <div className="welcome-mark"><AlienIcon /></div>
+                    <h1>今天想一起做什么？</h1>
+                    <p>本地模型 · 本机工作区 · 对话可以归入项目，也可以随时分叉。</p>
+                    <button onClick={() => void newConversation()}>开始新对话</button>
+                  </div>
+                ) : conversation.messages.length === 0 ? (
+                  <div className="chat-welcome compact"><div className="welcome-mark"><AlienIcon /></div><h1>从一个目标开始</h1><p>你可以持续追问、查看执行结果，也可以从任意一条消息分叉。</p></div>
+                ) : (
+                  <div className="message-list">
+                    {conversation.messages.map((message: Obj) => {
+                      const related = tasks.find((t) => t.id === message.taskId);
+                      return <article key={message.id} className={`chat-message ${message.role}`}>
+                        <div className="message-avatar">{message.role === "user" ? "你" : <AlienIcon />}</div>
+                        <div className="message-body">
+                          <div className="message-meta"><strong>{message.role === "user" ? "你" : "Alien"}</strong><time>{time(message.createdAt)}</time>{related && <Badge status={related.status} />}</div>
+                          <div className="message-content">{message.content}</div>
+                          {related?.error && <div className="message-error">{related.error}</div>}
+                          <button className="fork-button" onClick={() => void forkConversation(message.id)} title="复制到此条消息并从此处分叉">⑂ 从此处分叉</button>
+                        </div>
+                      </article>;
+                    })}
+                    {conversation.messages.some((m: Obj) => m.role === "user" && tasks.find((t) => t.id === m.taskId)?.status === "running") && <div className="working-indicator"><span className="pulse" />Alien 正在本机推理…</div>}
+                  </div>
+                )}
+              </div>
+              <form className="chat-composer" onSubmit={sendMessage}>
+                <textarea value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendMessage(); } }} placeholder="给 Alien 发消息…（Enter 发送，Shift+Enter 换行）" disabled={!conversationId} rows={3} maxLength={12000} />
+                <div className="chat-composer-footer"><span>本机模型 · 当前并行上限 {metrics?.maxConcurrentAgents ?? 1} 个 Agent</span><button disabled={busy || !conversationId || !chatInput.trim()}>发送 <span>↑</span></button></div>
+              </form>
+            </section>
+          ) : <>
           {error && (
             <div role="alert" className="banner error">
               {error}
@@ -1017,6 +1159,7 @@ function App() {
             <span>ALIEN · OWN YOUR CAPABILITIES</span>
             <span>本地模型 / 本地数据 / 可验证的改进</span>
           </footer>
+          </>}
         </main>
       </div>
     </div>
@@ -1051,6 +1194,13 @@ function Badge({ status }: { status: string }) {
       {labels[status] ?? status}
     </span>
   );
+}
+function LoadMeter({ label, percent, detail }: { label: string; percent: number; detail?: string }) {
+  const value = Math.max(0, Math.min(100, Number(percent) || 0));
+  return <div className="load-meter">
+    <div><span>{label}</span><strong>{Math.round(value)}%{detail && <small>{detail}</small>}</strong></div>
+    <i><b style={{ width: `${value}%` }} /></i>
+  </div>;
 }
 function Health({
   name,

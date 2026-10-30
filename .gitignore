@@ -11,5 +11,7 @@ coverage/
 *.tgz
 
 release/
+.runtime/
+.runtime-access-token
 
 .ui-test-data/

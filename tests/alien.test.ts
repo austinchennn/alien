@@ -15,7 +15,7 @@ import { createServer } from "node:http";
 import { Script, createContext } from "node:vm";
 import { once } from "node:events";
 import { Store } from "../src/store.js";
-import { defaults, now, type Task, type Config } from "../src/domain.js";
+import { defaults, now, type Task, type Config, type Conversation } from "../src/domain.js";
 import {
   localEndpoint,
   workspacePath,
@@ -390,6 +390,7 @@ test("HTTP API requires local token, validates tasks, and waits honestly when mo
       ).statusCode,
       400,
     );
+    instance.config().model.baseUrl = "http://127.0.0.1:1/v1";
     const response = await instance.app.inject({
       url: "/api/tasks",
       method: "POST",
@@ -407,6 +408,72 @@ test("HTTP API requires local token, validates tasks, and waits honestly when mo
       headers: { authorization: "Bearer test-token" },
     });
     assert.equal(backup.statusCode, 200);
+  } finally {
+    await instance.app.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("projects group persistent conversations and forks preserve their message prefix", async () => {
+  const dir = await temp();
+  const instance = await createApp({
+    dir,
+    root,
+    token: "test-token",
+    sandbox: fakeSandbox,
+    startEngine: false,
+  });
+  const headers = { authorization: "Bearer test-token" };
+  try {
+    instance.config().model.baseUrl = "http://127.0.0.1:1/v1";
+    const projectResponse = await instance.app.inject({
+      url: "/api/projects",
+      method: "POST",
+      headers,
+      payload: { name: "Local project" },
+    });
+    assert.equal(projectResponse.statusCode, 200);
+    const project = projectResponse.json();
+    const chatResponse = await instance.app.inject({
+      url: "/api/conversations",
+      method: "POST",
+      headers,
+      payload: { projectId: project.id },
+    });
+    assert.equal(chatResponse.statusCode, 200);
+    const chat = chatResponse.json();
+    const messageResponse = await instance.app.inject({
+      url: `/api/conversations/${chat.id}/messages`,
+      method: "POST",
+      headers,
+      payload: { content: "First turn" },
+    });
+    assert.equal(messageResponse.statusCode, 200);
+    const message = messageResponse.json().message;
+    await eventually(
+      () => instance.store.get<Task>("task", messageResponse.json().task.id)?.status === "waiting_model",
+    );
+    const forkResponse = await instance.app.inject({
+      url: `/api/conversations/${chat.id}/fork`,
+      method: "POST",
+      headers,
+      payload: { messageId: message.id },
+    });
+    assert.equal(forkResponse.statusCode, 200);
+    const fork = forkResponse.json();
+    assert.equal(fork.forkedFrom, chat.id);
+    assert.equal(fork.projectId, project.id);
+    assert.equal(fork.messages.length, 1);
+    assert.equal(fork.messages[0].content, "First turn");
+    const loaded = await instance.app.inject({
+      url: `/api/conversations/${fork.id}`,
+      headers,
+    });
+    assert.equal(loaded.json().messages[0].id, message.id);
+    const metrics = await instance.app.inject({ url: "/api/metrics", headers });
+    assert.equal(metrics.statusCode, 200);
+    assert.equal(metrics.json().maxConcurrentAgents, 1);
+    assert.equal(typeof metrics.json().cpuPercent, "number");
   } finally {
     await instance.app.close();
     await rm(dir, { recursive: true, force: true });
@@ -437,6 +504,19 @@ async function fakeModel() {
     for await (const chunk of req) raw += chunk;
     const body = JSON.parse(raw);
     requests.push(body);
+    if (JSON.stringify(body.messages).includes("plain chat reply test")) {
+      res.setHeader("content-type", "text/event-stream");
+      res.write("data: " + JSON.stringify({
+        id: "chat-test", object: "chat.completion.chunk", created: 1,
+        model: "test-local", choices: [{ index: 0, delta: { role: "assistant", content: "CHAT_ANSWER_OK" }, finish_reason: null }],
+      }) + "\n\n");
+      res.write("data: " + JSON.stringify({
+        id: "chat-test", object: "chat.completion.chunk", created: 1,
+        model: "test-local", choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      }) + "\n\n");
+      res.end("data: [DONE]\n\n");
+      return;
+    }
     const previous = body.messages.filter((m: any) => m.role === "tool");
     const calls = [
       { name: "tools_load", args: { groups: ["workspace"] } },
@@ -537,6 +617,20 @@ test("full Pi SDK executes a real tool task through a local OpenAI-compatible en
       ),
       "created by real Pi tools",
     );
+    const chat: Conversation = {
+      id: "plain-chat-test", title: "Plain chat", createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(), messages: [],
+    };
+    instance.store.put("conversation", chat.id, chat);
+    const chatTask = instance.engine.create("plain chat reply test", "task", [], undefined, 0, chat.id);
+    chat.messages.push({
+      id: "plain-chat-message", role: "user", content: "plain chat reply test",
+      createdAt: new Date().toISOString(), taskId: chatTask.id,
+    });
+    instance.store.put("conversation", chat.id, chat);
+    await eventually(() => instance.store.get<Task>("task", chatTask.id)?.status === "succeeded");
+    assert.equal(instance.store.get<Task>("task", chatTask.id)?.result, "CHAT_ANSWER_OK");
+    assert.equal(instance.store.get<Conversation>("conversation", chat.id)?.messages.at(-1)?.content, "CHAT_ANSWER_OK");
     assert(model.requests.length >= 3);
     assert(model.requests.every((r) => r.model === "test-local"));
     const saved = instance.store.get<{ path: string }>("pi_session", t.id)!;

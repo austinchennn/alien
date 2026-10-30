@@ -24,6 +24,29 @@ export interface Task {
   toolId?: string;
   attempts: number;
   contextTokens?: number;
+  conversationId?: string;
+}
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  createdAt: string;
+  taskId?: string;
+}
+export interface Conversation {
+  id: string;
+  title: string;
+  projectId?: string;
+  forkedFrom?: string;
+  createdAt: string;
+  updatedAt: string;
+  messages: ConversationMessage[];
+}
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
 }
 export interface EventRecord {
   seq: number;

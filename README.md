@@ -1,6 +1,6 @@
 # 👽 Alien
 
-在自己的电脑上运行的个人 Agent：本地模型、中文控制台、任务进度、记忆、标准 Skill、现成 MCP，以及有测试和回滚的工具自扩展。运行模型不使用收费 API。
+在自己的电脑上运行的个人 Agent：本地模型、中文对话工作区、项目归档与消息分叉、任务进度、记忆、标准 Skill、现成 MCP，以及有测试和回滚的工具自扩展。侧栏实时显示活动 Agent 数、CPU/RAM 和 GPU/显存负载。运行模型不使用收费 API。
 
 **底座直接复用 Pi Coding Agent SDK。** 已复用 Pi 会话、恢复、上下文压缩、Skill 加载、MCP 集成与文件工具；内置精选 Superpowers Skill 和本机 Playwright MCP。选型与其他现成项目对比见 [复用调研](docs/reuse.md)。
 
